@@ -45,11 +45,12 @@ func Crawl(urls []string, max_depth int){
 	// loop until nothing to fetch
 	for {
 		page := <- result_q
-		fmt.Printf("found: %s %q\n", page.url, page.body)
 		fetched[page.url] = true
 
 		if page.err != nil {
 			fmt.Println(page.err)
+		} else {
+			fmt.Printf("found: %s %q\n", page.url, page.body)
 		}
 
 		// fetch linked pages
