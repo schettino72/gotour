@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -14,42 +13,67 @@ type Fetcher interface {
 
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
-type Crawler struct {
-	fetcher Fetcher
-	fetched map[string]bool
+type Page struct {
+	url string
+	depth int
+	err error
+	body string
+	links []string
 }
 
-func (crawler Crawler) Crawl(url string, depth int) {
-	if depth <= 0 {
-		return
+func NewPage (url string, depth int) (*Page){
+	return &Page{url, depth, nil, "", nil}
+}
+
+
+
+func FetchPage(page *Page, fetcher Fetcher, result_q chan *Page) {
+	page.body, page.links, page.err = fetcher.Fetch(page.url)
+	result_q <- page
+}
+
+func Crawl(urls []string, max_depth int){
+	result_q := make(chan *Page)
+	fetched := make(map[string]bool)
+
+	// kick start with initial urls
+	fetching := len(urls)
+	for _, url := range(urls){
+		go FetchPage(NewPage(url, 0), fetcher, result_q)
 	}
 
-	body, urls, err := crawler.fetcher.Fetch(url)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	crawler.fetched[url] = true
+	// loop until nothing to fetch
+	for {
+		page := <- result_q
+		fmt.Printf("found: %s %q\n", page.url, page.body)
+		fetched[page.url] = true
 
-	fmt.Printf("found: %s %q\n", url, body)
+		if page.err != nil {
+			fmt.Println(page.err)
+		}
 
-	var wg sync.WaitGroup
-	for _, url := range urls {
-		// ignore url if already fetched
-		if !crawler.fetched[url] {
-			wg.Add(1)
-			go func(url string) {
-				crawler.Crawl(url, depth-1)
-				wg.Done()
-			}(url)
+		// fetch linked pages
+		next_depth := page.depth + 1
+		if next_depth < max_depth {
+			for _, url := range page.links {
+				// ignore url if already fetched
+				if !fetched[url] {
+					fetching++
+					go FetchPage(NewPage(url, next_depth), fetcher, result_q)
+				}
+			}
+		}
+
+		// done with this page, check nothing left
+		fetching--
+		if fetching == 0 {
+			break
 		}
 	}
-	wg.Wait()
 }
 
 func main() {
-	crawler := Crawler{fetcher, make(map[string]bool)}
-	crawler.Crawl("http://golang.org/", 4)
+	Crawl([]string{ "http://golang.org/" },  4)
 }
 
 // fakeFetcher is Fetcher that returns canned results.
